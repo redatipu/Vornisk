@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:VorniskGui.ViewModels"
+        x:Class="VorniskGui.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Vornisk — Copy / Move"
+        Width="560" Height="640"
+        MinWidth="440" MinHeight="540"
+        Background="#0F172A">
+
+  <!-- Whole UI scrolls if the window is shrunk below content size → nothing ever clips. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" MinWidth="408">
+
+      <!-- Header -->
+      <StackPanel Grid.Row="0" Margin="0,0,0,12" Spacing="2">
+        <TextBlock Text="Vornisk" FontSize="22" FontWeight="SemiBold" Foreground="#F1F5F9" />
+        <TextBlock Text="Fast, verified file copy / move" FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <!-- Source — file OR folder picker, and drag-and-drop -->
+      <Grid Grid.Row="1" Margin="0,0,0,8" ColumnDefinitions="92,*,Auto" IsEnabled="{Binding IsIdle}">
+        <TextBlock Grid.Column="0" Text="Source" VerticalAlignment="Center" Foreground="#E2E8F0" />
+        <TextBox  Grid.Column="1" x:Name="SourceBox" Margin="8,0" DragDrop.AllowDrop="True"
+                  Watermark="file or folder (or drop here)…"
+                  Text="{Binding SourcePath}" ToolTip.Tip="{Binding SourcePath}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+          <Button x:Name="BrowseSourceFileButton" Content="File…" />
+          <Button x:Name="BrowseSourceFolderButton" Content="Folder…" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Destination — folder picker + drag-and-drop -->
+      <Grid Grid.Row="2" Margin="0,0,0,8" ColumnDefinitions="92,*,Auto" IsEnabled="{Binding IsIdle}">
+        <TextBlock Grid.Column="0" Text="Destination" VerticalAlignment="Center" Foreground="#E2E8F0" />
+        <TextBox  Grid.Column="1" x:Name="DestBox" Margin="8,0" DragDrop.AllowDrop="True"
+                  Watermark="target folder (or drop here)…"
+                  Text="{Binding DestinationPath}" ToolTip.Tip="{Binding DestinationPath}" />
+        <Button   Grid.Column="2" x:Name="BrowseDestButton" Content="Folder…" />
+      </Grid>
+
+      <!-- Options (wrap on narrow widths → never clipped) -->
+      <Border Grid.Row="3" Margin="0,4,0,8" Padding="10" CornerRadius="6" Background="#1E293B">
+        <WrapPanel Orientation="Horizontal" IsEnabled="{Binding IsIdle}">
+          <CheckBox Content="Move (delete source)" IsChecked="{Binding IsMove}" Foreground="#E2E8F0" Margin="0,0,16,8" />
+          <CheckBox Content="Verify (xxHash3)" IsChecked="{Binding Verify}" Foreground="#E2E8F0" Margin="0,0,16,8" />
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,8">
+            <TextBlock Text="On conflict" VerticalAlignment="Center" Foreground="#E2E8F0" />
+            <ComboBox MinWidth="120" ItemsSource="{Binding ConflictModes}" SelectedIndex="{Binding ConflictIndex}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,8">
+            <TextBlock Text="Threads" VerticalAlignment="Center" Foreground="#E2E8F0" />
+            <NumericUpDown Width="120" Minimum="1" Maximum="64" Increment="1" FormatString="0"
+                          Value="{Binding ThreadsValue}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,8">
+            <TextBlock Text="Limit" VerticalAlignment="Center" Foreground="#E2E8F0" />
+            <TextBox Width="120" Watermark="e.g. 200M" Text="{Binding LimitText}" />
+          </StackPanel>
+        </WrapPanel>
+      </Border>
+
+      <!-- Actions -->
+      <WrapPanel Grid.Row="4" Margin="0,0,0,10">
+        <Button Content="Start" Classes="accent" MinWidth="96" Margin="0,0,8,0" Command="{Binding StartCommand}" />
+        <Button Content="Cancel" MinWidth="96" Command="{Binding CancelCommand}" />
+      </WrapPanel>
+
+      <!-- Progress -->
+      <StackPanel Grid.Row="5" Margin="0,0,0,8" Spacing="6">
+        <ProgressBar Height="16" Minimum="0" Maximum="100" Value="{Binding ProgressValue}" />
+        <TextBlock Text="{Binding ProgressText}" FontSize="12" Foreground="#CBD5E1" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding CurrentFile}" FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <!-- Log (fills remaining height; scrolls) -->
+      <Border Grid.Row="6" CornerRadius="6" Background="#0B1220" BorderBrush="#334155" BorderThickness="1" MinHeight="120">
+        <TextBox Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 Background="Transparent" BorderThickness="0" FontFamily="monospace" FontSize="12"
+                 Foreground="#CBD5E1" VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+      </Border>
+
+      <!-- Status -->
+      <TextBlock Grid.Row="7" Margin="0,10,0,0" Text="{Binding StatusText}"
+                 FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
+    </Grid>
+  </ScrollViewer>
+</Window>

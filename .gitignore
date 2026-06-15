@@ -1,0 +1,55 @@
+# ---- .NET build output ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# Published / self-contained binaries (ship these via GitHub Releases, not the repo)
+dist/
+publish/
+*.dll
+*.pdb
+*.so
+*.dylib
+
+# ---- NuGet ----
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# ---- Test / coverage ----
+[Tt]est[Rr]esult*/
+TestResults/
+coverage*.json
+coverage*.xml
+*.coverage
+*.trx
+
+# ---- IDE / editor ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.swp
+*~
+
+# ---- OS cruft ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs / temp ----
+*.log
+*.tmp
+*.part
