@@ -9,7 +9,7 @@ It ships as two front-ends over the same engine — a CLI (`vornisk`) for server
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg)
 
-## Install
+## Install (CLI)
 
 Grab a binary from the [Releases](https://github.com/redatipu/vornisk/releases) page (pick `linux-x64` or `linux-arm64`), then drop it on your `PATH`:
 
@@ -39,7 +39,7 @@ vornisk --json --quiet a.bin /b | jq .success
 
 By default Vornisk hashes every file as it reads it, then re-reads the written copy and compares. If they don't match, that file is marked failed and the source is left untouched. You can turn that off with `--no-verify` if you trust the path and want the speed.
 
-## Options
+## OPTIONS 
 
 ```
 vornisk [OPTIONS] SOURCE... DESTINATION
@@ -61,7 +61,7 @@ vornisk [OPTIONS] SOURCE... DESTINATION
 
 Exit codes: `0` success · `1` at least one file failed · `2` bad usage · `130` cancelled (Ctrl-C).
 
-## GUI
+## GUI INSTALLATION
 
 If you'd rather not type, `vornisk-gui` is a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. There's a live progress bar and a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs — on a headless server, stick to the CLI.
 
