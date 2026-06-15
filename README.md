@@ -37,6 +37,8 @@ vornisk -j 8 -l 300M /mnt/array /mnt/nas/backup
 vornisk --json --quiet a.bin /b | jq .success
 ```
 
+While it runs you get two progress bars — one for the file it's currently on, one for the whole job — so you can see both at a glance. Pipe the output somewhere and it quietly drops down to a single plain status line.
+
 By default Vornisk hashes every file as it reads it, then re-reads the written copy and compares. If they don't match, that file is marked failed and the source is left untouched. You can turn that off with `--no-verify` if you trust the path and want the speed.
 
 ## OPTIONS 
