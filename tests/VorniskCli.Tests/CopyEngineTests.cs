@@ -31,6 +31,14 @@ public sealed class CopyEngineTests : IDisposable
         return b;
     }
 
+    /// <summary>Captures progress reports synchronously (engine reports inline) for deterministic assertions.</summary>
+    private sealed class SyncProgress : IProgress<CopyProgress>
+    {
+        private readonly List<CopyProgress> _items = new();
+        public void Report(CopyProgress value) { lock (_items) _items.Add(value); }
+        public List<CopyProgress> Snapshot() { lock (_items) return _items.ToList(); }
+    }
+
     private static CopyOptions Opt(IReadOnlyList<string> src, string dst, CopyOperation op = CopyOperation.Copy,
         bool verify = true, ConflictMode conflict = ConflictMode.Skip, long limit = 0)
         => new()
@@ -164,6 +172,57 @@ public sealed class CopyEngineTests : IDisposable
         // The symlinked dir must NOT be traversed — the secret behind it must not be copied.
         Assert.False(File.Exists(Path.Combine(baseDir, "link", "secret.txt")),
             "symlinked directory was followed — path-escape security regression");
+    }
+
+    [Fact]
+    public async Task Progress_ReportsPerFileBytesAndTotal()
+    {
+        var src = Dir("ps"); var dst = Dir("pd");
+        var data = Rand(2 * 1024 * 1024, 11);          // 2 MB so several throttled ticks fire
+        var f = Path.Combine(src, "big.bin");
+        File.WriteAllBytes(f, data);
+
+        // Synchronous collector: the engine calls IProgress.Report inline, so every tick (incl. the
+        // final one) is captured deterministically. Progress<T> would deliver async and race the await.
+        var progress = new SyncProgress();
+
+        // single thread → the "current file" slot is unambiguous; 4 MB/s → ~0.5s, multiple 200ms ticks
+        var opt = new CopyOptions
+        {
+            Sources = new[] { f }, Destination = dst, Threads = 1,
+            MaxBytesPerSec = 4L * 1024 * 1024,
+        };
+        var r = await new CopyEngine().RunAsync(opt, progress, CancellationToken.None);
+        Assert.True(r.Success);
+
+        var seen = progress.Snapshot();
+
+        // per-file total is reported and equals the file size
+        Assert.Contains(seen, p => p.CurrentFileTotal == data.Length);
+        // per-file byte counter advances and never exceeds the file total
+        Assert.Contains(seen, p => p.CurrentFileBytes > 0);
+        Assert.All(seen, p => Assert.True(p.CurrentFileBytes <= p.CurrentFileTotal || p.CurrentFileTotal == 0));
+        // current-file fraction stays in range; the file name is surfaced
+        Assert.All(seen, p => Assert.InRange(p.CurrentFileFraction, 0.0, 1.0));
+        Assert.Contains(seen, p => p.CurrentFile != null && Path.GetFileName(p.CurrentFile) == "big.bin");
+    }
+
+    [Fact]
+    public async Task BlockedDestination_ReportsFailed_DoesNotThrow()
+    {
+        // dest tree can't be created because a *file* sits where a directory must go.
+        // Regression: this used to throw out of RunAsync and crash the CLI process.
+        var src = Dir("bd_src");
+        File.WriteAllBytes(Path.Combine(src, "a.bin"), Rand(256, 21));
+        var blocker = Path.Combine(_root, "blocker");
+        File.WriteAllText(blocker, "i am a file, not a directory");
+
+        var dest = Path.Combine(blocker, "target"); // path goes *through* the file → CreateDirectory fails
+        var r = await new CopyEngine().RunAsync(Opt(new[] { src }, dest), null, CancellationToken.None);
+
+        Assert.False(r.Success);
+        Assert.True(r.FilesFailed >= 1);
+        Assert.NotEmpty(r.Errors);
     }
 
     [Fact]

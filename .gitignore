@@ -53,3 +53,7 @@ desktop.ini
 *.log
 *.tmp
 *.part
+
+# ---- Local-only docs (internal/technical; README.md is the public one) ----
+INT-README.md
+spec.md

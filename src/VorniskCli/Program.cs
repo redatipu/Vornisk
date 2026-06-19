@@ -42,7 +42,9 @@ internal static class CliRunner
         try
         {
             var result = await engine.RunAsync(opt, progress, cts.Token);
-            if (!quiet && !json) Console.Error.WriteLine(); // end the \r progress line
+            // Plain mode: terminate the single \r line. Two-bar mode already left the cursor on a
+            // fresh line below the bars, so no extra newline is needed there.
+            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
 
             if (json) PrintJson(result);
             else if (!quiet) PrintSummary(result);
@@ -51,9 +53,18 @@ internal static class CliRunner
         }
         catch (OperationCanceledException)
         {
-            if (!quiet && !json) Console.Error.WriteLine();
+            // Plain mode: end the \r line. Two-bar mode already sits on a fresh line below the bars.
+            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
             Console.Error.WriteLine("vornisk: cancelled.");
             return 130;
+        }
+        catch (Exception ex)
+        {
+            // Backstop: anything that escapes the engine (bad/blocked destination, enumeration I/O error
+            // on a flaky mount, path too long, …) becomes a clean message + exit 1 — never a crash dump.
+            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
+            Console.Error.WriteLine($"vornisk: {ex.Message}");
+            return 1;
         }
     }
 
@@ -153,7 +164,40 @@ internal static class CliRunner
 
     // ── output ──────────────────────────────────────────────────────────────────────
 
+    // A real terminal gets the two-line live display (ANSI cursor moves). A redirected/piped
+    // stderr (logs, CI) gets a plain single overwriting line — no escape codes to pollute the file.
+    private static readonly bool _ansi = !Console.IsErrorRedirected;
+    private static bool _barsShown;
+
+    /// <summary>
+    /// Two stacked progress bars: line 1 = the file currently being worked on, line 2 = the whole job.
+    /// Redraw works by moving the cursor up two lines each tick and rewriting both.
+    /// </summary>
     private static void RenderProgress(CopyProgress p)
+    {
+        if (!_ansi) { RenderProgressPlain(p); return; }
+
+        int width = SafeWidth();
+        int barW  = Math.Clamp(width / 3, 10, 32);
+
+        string name = string.IsNullOrEmpty(p.CurrentFile) ? "" : Path.GetFileName(p.CurrentFile);
+        string l1 = $"  file   {Bar(p.CurrentFileFraction, barW)} {p.CurrentFileFraction * 100,5:0.0}%  " +
+                    $"{Human(p.CurrentFileBytes)}/{Human(p.CurrentFileTotal)}  {name}";
+        string l2 = $"  total  {Bar(p.Fraction, barW)} {p.Fraction * 100,5:0.0}%  " +
+                    $"{Human(p.BytesDone)}/{Human(p.TotalBytes)}  {Human((long)p.BytesPerSec)}/s  " +
+                    $"files {p.FilesDone}/{p.TotalFiles}" +
+                    (p.FilesFailed > 0 ? $"  failed {p.FilesFailed}" : "") +
+                    (p.FilesSkipped > 0 ? $"  skipped {p.FilesSkipped}" : "");
+
+        var sb = new System.Text.StringBuilder();
+        if (_barsShown) sb.Append("\x1b[2A");                      // back up over the two bar lines
+        sb.Append('\r').Append("\x1b[K").Append(Fit(l1, width)).Append('\n');  // \x1b[K clears to EOL
+        sb.Append('\r').Append("\x1b[K").Append(Fit(l2, width)).Append('\n');
+        Console.Error.Write(sb.ToString());
+        _barsShown = true;
+    }
+
+    private static void RenderProgressPlain(CopyProgress p)
     {
         var line = $"\r{p.Fraction * 100,5:0.0}%  {Human(p.BytesDone)}/{Human(p.TotalBytes)}  " +
                    $"{Human((long)p.BytesPerSec)}/s  files {p.FilesDone}/{p.TotalFiles}" +
@@ -161,6 +205,26 @@ internal static class CliRunner
                    (p.FilesSkipped > 0 ? $"  skipped {p.FilesSkipped}" : "");
         if (line.Length < 79) line += new string(' ', 79 - line.Length); // clear leftovers
         Console.Error.Write(line);
+    }
+
+    private static string Bar(double frac, int width)
+    {
+        frac = Math.Clamp(frac, 0, 1);
+        int fill = (int)Math.Round(frac * width);
+        return "[" + new string('#', fill) + new string('-', width - fill) + "]";
+    }
+
+    /// <summary>Truncate to the terminal width so the line never wraps (which would break the cursor math).</summary>
+    private static string Fit(string s, int width)
+    {
+        if (width <= 1 || s.Length < width) return s;
+        return string.Concat(s.AsSpan(0, width - 2), "…");
+    }
+
+    private static int SafeWidth()
+    {
+        try { int w = Console.WindowWidth; return w > 0 ? w : 80; }
+        catch { return 80; }
     }
 
     private static void PrintSummary(CopyResult r)

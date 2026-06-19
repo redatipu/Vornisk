@@ -18,9 +18,12 @@ public sealed class CopyEngine
     {
         var (items, destDirs, plannedBytes) = BuildPlan(opt);
 
-        // Create destination directory tree up front (preserves empty source dirs too).
+        // Pre-create the destination directory tree (preserves empty source dirs). Best-effort: a bad
+        // entry here (a file in the way, perms, path length, read-only mount) must NOT abort a 500 GB
+        // job — each file recreates its own parent dir in ProcessItemAsync, where the failure is caught
+        // and reported per-file instead of crashing the process.
         foreach (var d in destDirs)
-            Directory.CreateDirectory(d);
+            try { Directory.CreateDirectory(d); } catch { /* per-file CreateDirectory will surface it */ }
 
         var limiter = new TokenBucketRateLimiter(opt.MaxBytesPerSec <= 0 ? 0 : opt.MaxBytesPerSec);
         var sw = Stopwatch.StartNew();
@@ -30,13 +33,19 @@ public sealed class CopyEngine
         int  filesDone    = 0;
         int  filesFailed  = 0;
         int  filesSkipped = 0;
-        string? current   = null;
+        FileItem? currentItem = null;          // most-recently-started in-flight file (drives the per-file bar)
         var errors = new List<(string, string)>();
 
-        void Emit() => progress?.Report(new CopyProgress(
-            Interlocked.Read(ref totalBytes), Interlocked.Read(ref bytesDone),
-            items.Count, Volatile.Read(ref filesDone), Volatile.Read(ref filesFailed),
-            Volatile.Read(ref filesSkipped), current, sw.Elapsed.TotalSeconds));
+        void Emit()
+        {
+            var ci = currentItem; // reference read is atomic; its BytesCopied has a single writer (its worker)
+            progress?.Report(new CopyProgress(
+                Interlocked.Read(ref totalBytes), Interlocked.Read(ref bytesDone),
+                items.Count, Volatile.Read(ref filesDone), Volatile.Read(ref filesFailed),
+                Volatile.Read(ref filesSkipped),
+                ci?.SourcePath, ci?.BytesCopied ?? 0, ci?.SizeBytes ?? 0,
+                sw.Elapsed.TotalSeconds));
+        }
 
         using (var timer = new Timer(_ => Emit(), null, 200, 200))
         {
@@ -44,11 +53,11 @@ public sealed class CopyEngine
                 new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, opt.Threads), CancellationToken = ct },
                 async (item, c) =>
                 {
-                    current = item.SourcePath;
+                    currentItem = item;
                     try
                     {
                         await ProcessItemAsync(item, opt, limiter,
-                            n => Interlocked.Add(ref bytesDone, n), c).ConfigureAwait(false);
+                            n => { Interlocked.Add(ref bytesDone, n); item.BytesCopied += n; }, c).ConfigureAwait(false);
 
                         if (item.Status == ItemStatus.Skipped)
                         {
@@ -127,16 +136,28 @@ public sealed class CopyEngine
                     AttributesToSkip      = FileAttributes.ReparsePoint,
                     IgnoreInaccessible    = true,
                 };
-                foreach (var dir in Directory.EnumerateDirectories(full, "*", enumOpts))
-                    destDirs.Add(Path.Combine(destRoot, Path.GetRelativePath(full, dir)));
-
-                foreach (var file in Directory.EnumerateFiles(full, "*", enumOpts))
+                // Resilient enumeration: IgnoreInaccessible already skips perm errors; this try also
+                // stops a hard I/O error deep in the tree (flaky mount, vanished dir, path too long)
+                // from aborting the *entire* plan — we keep what we walked and move on.
+                // ponytail: a throw ends that subtree's walk here; fine unless you need every-file-or-fail
+                // semantics (then enumerate eagerly per-dir and record each failure as a Failed item).
+                try
                 {
-                    var rel  = Path.GetRelativePath(full, file);
-                    var dest = Path.Combine(destRoot, rel);
-                    long len = SafeLength(file);
-                    total += len;
-                    items.Add(new FileItem { SourcePath = file, DestPath = dest, SizeBytes = len });
+                    foreach (var dir in Directory.EnumerateDirectories(full, "*", enumOpts))
+                        destDirs.Add(Path.Combine(destRoot, Path.GetRelativePath(full, dir)));
+
+                    foreach (var file in Directory.EnumerateFiles(full, "*", enumOpts))
+                    {
+                        var rel  = Path.GetRelativePath(full, file);
+                        var dest = Path.Combine(destRoot, rel);
+                        long len = SafeLength(file);
+                        total += len;
+                        items.Add(new FileItem { SourcePath = file, DestPath = dest, SizeBytes = len });
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // partial tree captured; the copy proceeds with what we have
                 }
             }
             else if (File.Exists(source))

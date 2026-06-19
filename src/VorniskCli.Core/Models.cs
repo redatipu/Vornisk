@@ -12,6 +12,8 @@ public sealed class FileItem
     public required string SourcePath { get; init; }
     public required string DestPath   { get; set; }
     public long            SizeBytes  { get; init; }
+    /// <summary>Bytes written so far for THIS file (single-writer: its own worker). Drives the per-file bar.</summary>
+    public long            BytesCopied { get; set; }
     public ItemStatus      Status     { get; set; } = ItemStatus.Pending;
     public string?         Error      { get; set; }
 }
@@ -36,9 +38,13 @@ public sealed class CopyOptions
 public readonly record struct CopyProgress(
     long TotalBytes, long BytesDone,
     int TotalFiles, int FilesDone, int FilesFailed, int FilesSkipped,
-    string? CurrentFile, double ElapsedSeconds)
+    string? CurrentFile, long CurrentFileBytes, long CurrentFileTotal,
+    double ElapsedSeconds)
 {
+    /// <summary>Overall job completion (all files).</summary>
     public double Fraction => TotalBytes > 0 ? (double)BytesDone / TotalBytes : 0;
+    /// <summary>Completion of the file currently being worked on.</summary>
+    public double CurrentFileFraction => CurrentFileTotal > 0 ? (double)CurrentFileBytes / CurrentFileTotal : 0;
     public double BytesPerSec => ElapsedSeconds > 0 ? BytesDone / ElapsedSeconds : 0;
 }
 
