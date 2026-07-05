@@ -9,6 +9,19 @@ It ships as two front-ends over the same engine — a CLI (`vornisk`) for server
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg)
 
+Run it with no arguments (or `--help`) and it introduces itself:
+
+```
+__     __ ___   ____   _   _  ___  ____   _  __
+\ \   / // _ \ |  _ \ | \ | ||_ _|/ ___| | |/ /
+ \ \ / /| | | || |_) ||  \| | | | \___ \ | ' /
+  \ V / | |_| ||  _ < | |\  | | |  ___) || . \
+   \_/   \___/ |_| \_\|_| \_||___||____/ |_|\_\
+```
+
+Plain ASCII on purpose, so it looks right in any terminal — and it stays out of your way when it
+matters: `--version` prints a single line, and `--json`, `--quiet`, and piped runs never show it.
+
 ## Install (CLI)
 
 Grab a binary from the [Releases](https://github.com/redatipu/vornisk/releases) page (pick `linux-x64` or `linux-arm64`), then drop it on your `PATH`:
@@ -41,7 +54,7 @@ While it runs you get two progress bars — one for the file it's currently on, 
 
 By default Vornisk hashes every file as it reads it, then re-reads the written copy and compares. If they don't match, that file is marked failed and the source is left untouched. You can turn that off with `--no-verify` if you trust the path and want the speed.
 
-## OPTIONS 
+## Options
 
 ```
 vornisk [OPTIONS] SOURCE... DESTINATION
@@ -63,9 +76,9 @@ vornisk [OPTIONS] SOURCE... DESTINATION
 
 Exit codes: `0` success · `1` at least one file failed · `2` bad usage · `130` cancelled (Ctrl-C).
 
-## GUI INSTALLATION
+## The GUI
 
-If you'd rather not type, `vornisk-gui` is a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. You get the same two progress bars as the CLI — the file it's on and the job as a whole — plus a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs — on a headless server, stick to the CLI.
+If you'd rather not type, grab `vornisk-gui` from the same [Releases](https://github.com/redatipu/vornisk/releases) page — it's a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. You get the same two progress bars as the CLI — the file it's on and the job as a whole — plus a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs, so on a headless server, stick to the CLI.
 
 ```bash
 chmod +x vornisk-gui
