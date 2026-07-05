@@ -66,11 +66,13 @@
         <Button Content="Cancel" MinWidth="96" Command="{Binding CancelCommand}" />
       </WrapPanel>
 
-      <!-- Progress -->
-      <StackPanel Grid.Row="5" Margin="0,0,0,8" Spacing="6">
-        <ProgressBar Height="16" Minimum="0" Maximum="100" Value="{Binding ProgressValue}" />
-        <TextBlock Text="{Binding ProgressText}" FontSize="12" Foreground="#CBD5E1" TextWrapping="Wrap" />
+      <!-- Progress — dual bars, TeraCopy-style: current file on top, whole job below -->
+      <StackPanel Grid.Row="5" Margin="0,0,0,8" Spacing="4">
         <TextBlock Text="{Binding CurrentFile}" FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
+        <ProgressBar Height="10" Minimum="0" Maximum="100" Value="{Binding FileProgressValue}" />
+        <TextBlock Text="{Binding FileProgressText}" FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" />
+        <ProgressBar Height="16" Minimum="0" Maximum="100" Value="{Binding ProgressValue}" Margin="0,4,0,0" />
+        <TextBlock Text="{Binding ProgressText}" FontSize="12" Foreground="#CBD5E1" TextWrapping="Wrap" />
       </StackPanel>
 
       <!-- Log (fills remaining height; scrolls) -->

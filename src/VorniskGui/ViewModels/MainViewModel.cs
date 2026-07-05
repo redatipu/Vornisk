@@ -70,6 +70,13 @@ public sealed class MainViewModel : ObservableObject
     private string _progressText = "";
     public string ProgressText { get => _progressText; set => SetProperty(ref _progressText, value); }
 
+    // Per-file bar (TeraCopy-style dual progress): current file on top, whole job below.
+    private double _fileProgressValue;
+    public double FileProgressValue { get => _fileProgressValue; set => SetProperty(ref _fileProgressValue, value); }
+
+    private string _fileProgressText = "";
+    public string FileProgressText { get => _fileProgressText; set => SetProperty(ref _fileProgressText, value); }
+
     private string _currentFile = "";
     public string CurrentFile { get => _currentFile; set => SetProperty(ref _currentFile, value); }
 
@@ -123,8 +130,15 @@ public sealed class MainViewModel : ObservableObject
                 ? $"Done — {result.FilesCopied} file(s), {Human(result.BytesCopied)} in {result.Elapsed.TotalSeconds:0.0}s"
                 : $"Completed with {result.FilesFailed} failure(s)";
             AppendLog($"Copied {result.FilesCopied}/{result.TotalFiles}, skipped {result.FilesSkipped}, failed {result.FilesFailed} ({Human(result.BytesCopied)}, {result.Elapsed.TotalSeconds:0.0}s)");
-            foreach (var (path, err) in result.Errors)
-                AppendLog($"  ! {path}: {err}");
+            // Cap the error dump: `Log +=` per line is quadratic — a mass failure (dead mount,
+            // permissions on a huge tree) with 100k errors would freeze the UI building strings.
+            const int maxLoggedErrors = 100;
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < result.Errors.Count && i < maxLoggedErrors; i++)
+                sb.AppendLine($"  ! {result.Errors[i].Path}: {result.Errors[i].Error}");
+            if (result.Errors.Count > maxLoggedErrors)
+                sb.AppendLine($"  … and {result.Errors.Count - maxLoggedErrors:N0} more failures (run the CLI with --json for the full list)");
+            if (sb.Length > 0) AppendLog(sb.ToString().TrimEnd());
         }
         catch (OperationCanceledException)
         {
@@ -159,6 +173,12 @@ public sealed class MainViewModel : ObservableObject
                        (p.FilesFailed > 0 ? $"   failed {p.FilesFailed}" : "") +
                        (p.FilesSkipped > 0 ? $"   skipped {p.FilesSkipped}" : "");
         CurrentFile = p.CurrentFile ?? "";
+
+        // Per-file bar — same data the CLI's top bar uses.
+        FileProgressValue = p.CurrentFileFraction * 100;
+        FileProgressText  = p.CurrentFileTotal > 0
+            ? $"{p.CurrentFileFraction * 100:0.0}%   {Human(p.CurrentFileBytes)} / {Human(p.CurrentFileTotal)}"
+            : "";
     }
 
     private void AppendLog(string line) => Log += (Log.Length == 0 ? "" : "\n") + line;

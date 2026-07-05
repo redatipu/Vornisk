@@ -235,8 +235,19 @@ internal static class CliRunner
         if (r.FilesFailed > 0)
         {
             Console.WriteLine($"Failed:  {r.FilesFailed}");
+            // Cap the dump — a mass failure on a huge tree shouldn't flood the terminal with
+            // 100k lines. --json carries the complete error list for scripts.
+            const int maxShown = 100;
+            int shown = 0;
             foreach (var (path, err) in r.Errors)
+            {
+                if (shown++ == maxShown)
+                {
+                    Console.Error.WriteLine($"  … and {r.Errors.Count - maxShown:N0} more failures (use --json for the full list)");
+                    break;
+                }
                 Console.Error.WriteLine($"  ! {path}: {err}");
+            }
         }
     }
 

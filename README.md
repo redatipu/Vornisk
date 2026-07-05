@@ -65,7 +65,7 @@ Exit codes: `0` success · `1` at least one file failed · `2` bad usage · `130
 
 ## GUI INSTALLATION
 
-If you'd rather not type, `vornisk-gui` is a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. There's a live progress bar and a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs — on a headless server, stick to the CLI.
+If you'd rather not type, `vornisk-gui` is a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. You get the same two progress bars as the CLI — the file it's on and the job as a whole — plus a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs — on a headless server, stick to the CLI.
 
 ```bash
 chmod +x vornisk-gui

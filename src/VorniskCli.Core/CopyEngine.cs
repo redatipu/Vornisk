@@ -57,7 +57,9 @@ public sealed class CopyEngine
                     try
                     {
                         await ProcessItemAsync(item, opt, limiter,
-                            n => { Interlocked.Add(ref bytesDone, n); item.BytesCopied += n; }, c).ConfigureAwait(false);
+                            // long, not int: the move fast path reports whole-file sizes (>2 GB files
+                            // would truncate at int.MaxValue and stall the bar short of 100%).
+                            (long n) => { Interlocked.Add(ref bytesDone, n); item.BytesCopied += n; }, c).ConfigureAwait(false);
 
                         if (item.Status == ItemStatus.Skipped)
                         {
@@ -187,7 +189,7 @@ public sealed class CopyEngine
     // ── per-item ──────────────────────────────────────────────────────────────────
 
     private async Task ProcessItemAsync(FileItem item, CopyOptions opt, TokenBucketRateLimiter limiter,
-        Action<int> onBytes, CancellationToken ct)
+        Action<long> onBytes, CancellationToken ct)
     {
         item.Status = ItemStatus.Copying;
         if (!File.Exists(item.SourcePath))
@@ -219,7 +221,7 @@ public sealed class CopyEngine
             {
                 File.Move(item.SourcePath, finalDest, overwrite: opt.Conflict == ConflictMode.Overwrite);
                 item.Status = ItemStatus.Done;
-                onBytes((int)Math.Min(item.SizeBytes, int.MaxValue));
+                onBytes(item.SizeBytes); // full size — rename moved the whole file (was int-truncated at 2 GB)
                 return;
             }
             catch (IOException)
@@ -261,7 +263,7 @@ public sealed class CopyEngine
 
     /// <summary>Double-buffered async copy: read chunk N+1 while writing chunk N. Hashes + throttles inline.</summary>
     private static async Task<byte[]> CopyFileAsync(string src, string temp, TokenBucketRateLimiter limiter,
-        int bufSize, Action<int> onBytes, CancellationToken ct)
+        int bufSize, Action<long> onBytes, CancellationToken ct)
     {
         var hasher = new XxHash3Hasher();
         await using var inStream = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read,
