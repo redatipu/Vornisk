@@ -287,8 +287,25 @@ internal static class CliRunner
         return i == 0 ? $"{bytes} B" : $"{v:0.0} {u[i]}";
     }
 
+    /// <summary>
+    /// ASCII banner (pure ASCII on purpose — renders on any terminal/locale, no Unicode box chars).
+    /// Shown on help / bare invocation only: --version stays one-line parseable, --json/--quiet and
+    /// normal runs stay banner-free so scripts and pipes never see it.
+    /// </summary>
+    private static void PrintBanner()
+    {
+        Console.WriteLine(
+@"__     __ ___   ____   _   _  ___  ____   _  __
+\ \   / // _ \ |  _ \ | \ | ||_ _|/ ___| | |/ /
+ \ \ / /| | | || |_) ||  \| | | | \___ \ | ' /
+  \ V / | |_| ||  _ < | |\  | | |  ___) || . \
+   \_/   \___/ |_| \_\|_| \_||___||____/ |_|\_\
+");
+    }
+
     private static void PrintHelp()
     {
+        PrintBanner();
         Console.WriteLine(
 @"vornisk — fast, verified file copy/move (cross-platform CLI)
 
