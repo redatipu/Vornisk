@@ -43,6 +43,12 @@ vornisk /data/backup.tar.zst /mnt/nas/backups/
 # move two trees, auto-rename anything that clashes at the destination
 vornisk -m --on-conflict rename /srv/projectA /srv/projectB /archive/
 
+# rehearse a big move first: what would transfer, what conflicts, zero I/O
+vornisk -n -v -m /srv/project /archive/
+
+# skip the noise: exclude scratch files and whole directories
+vornisk -x '*.tmp' -x node_modules /repo /backup
+
 # throttle to 300 MB/s with 8 workers when copying to a NAS over a shared link
 vornisk -j 8 -l 300M /mnt/array /mnt/nas/backup
 
@@ -50,9 +56,11 @@ vornisk -j 8 -l 300M /mnt/array /mnt/nas/backup
 vornisk --json --quiet a.bin /b | jq .success
 ```
 
-While it runs you get two progress bars — one for the file it's currently on, one for the whole job — so you can see both at a glance. Pipe the output somewhere and it quietly drops down to a single plain status line.
+While it runs you get two progress bars — one for the file it's currently on, one for the whole job — plus speed and an ETA. Pipe the output somewhere and it quietly drops down to a single plain status line, or use `--json-progress` to stream machine-readable events for your own tooling.
 
 By default Vornisk hashes every file as it reads it, then re-reads the written copy and compares. If they don't match, that file is marked failed and the source is left untouched. You can turn that off with `--no-verify` if you trust the path and want the speed.
+
+A few behaviors worth knowing: moving a folder removes the emptied source tree afterwards (like `mv` — no hollow skeleton left behind), any directory still holding something is kept; symlinks found while walking a tree are never followed, and the summary tells you how many were skipped instead of silently dropping them; pausing is just standard job control (`Ctrl-Z` to suspend, `fg` to resume).
 
 ## Options
 
@@ -62,23 +70,31 @@ vornisk [OPTIONS] SOURCE... DESTINATION
 
 | Option | What it does |
 |---|---|
-| `-m, --move` | Move instead of copy. Source is deleted only after the write is verified. |
+| `-m, --move` | Move instead of copy. Source is deleted only after the write is verified; emptied source folders are removed. |
 | `--no-verify` | Skip the verify pass. Faster, less safe. |
+| `-n, --dry-run` | Plan only — count files, bytes, and conflicts without touching anything. |
+| `-x, --exclude GLOB` | Exclude entries (repeat as needed). Plain patterns match names; patterns with a `/` match relative paths. Matching folders are skipped entirely. |
 | `-j, --threads N` | Concurrent file workers. Default: `min(4, CPU count)`. |
 | `-l, --limit RATE` | Throttle, e.g. `512K`, `200M`, `1G` (base-1024 bytes/sec). Default: unlimited. |
 | `--on-conflict MODE` | `skip` (default), `overwrite`, or `rename`. |
 | `--overwrite` | Shorthand for `--on-conflict overwrite`. |
 | `--buffer SIZE` | I/O buffer size. Default: `1M`. |
 | `--no-preserve` | Don't carry over timestamps and Unix permission bits. |
+| `-v, --verbose` | One line per file (ok/skip/FAIL — or the plan, under `--dry-run`). |
 | `-q, --quiet` | No progress, no summary. |
 | `--json` | Machine-readable summary on stdout. |
-| `-h, --help` / `-v, --version` | The usual. |
+| `--json-progress` | Stream NDJSON progress events on stdout; summary object last. |
+| `-h, --help` / `-V, --version` | The usual. (Heads-up: `-v` used to mean version in 0.1 — it's verbose now, like everywhere else.) |
 
 Exit codes: `0` success · `1` at least one file failed · `2` bad usage · `130` cancelled (Ctrl-C).
 
+There's a man page and bash/zsh completions in [`packaging/`](packaging/) if you like your tools fully dressed.
+
 ## The GUI
 
-If you'd rather not type, grab `vornisk-gui` from the same [Releases](https://github.com/redatipu/vornisk/releases) page — it's a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. You get the same two progress bars as the CLI — the file it's on and the job as a whole — plus a log. It needs a desktop session (X11 or Wayland) and the usual graphics libs, so on a headless server, stick to the CLI.
+If you'd rather not type, grab `vornisk-gui` from the same [Releases](https://github.com/redatipu/vornisk/releases) page — it's a small dark-themed desktop window built on Avalonia. Pick a source file or folder (or just drag it onto the window), pick a destination, set move/verify/conflict/threads/throttle, and hit Start. You get the same two progress bars as the CLI plus speed, ETA, and a log.
+
+It grew up a bit in 0.2: you can **pause and resume** a running transfer, hit Start again while one is running to **queue** more jobs, and when a destination file already exists it **asks you** what to do (skip / overwrite / rename, with "apply to all") instead of making you pick a policy up front. It remembers your window size and last-used paths between runs, and there's an "Open destination" button for when it's done. It needs a desktop session (X11 or Wayland) and the usual graphics libs, so on a headless server, stick to the CLI.
 
 ```bash
 chmod +x vornisk-gui

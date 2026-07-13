@@ -5,7 +5,14 @@ return await CliRunner.Run(args);
 
 internal static class CliRunner
 {
-    private const string Version = "0.1.0";
+    private const string Version = "0.2.0";
+
+    private sealed class CliFlags
+    {
+        public bool Quiet, Json, JsonProgress, Verbose;
+        /// <summary>Bars only on a plain interactive run — any structured/verbose mode owns the output.</summary>
+        public bool Bars => !Quiet && !Json && !JsonProgress && !Verbose;
+    }
 
     public static async Task<int> Run(string[] args)
     {
@@ -14,17 +21,18 @@ internal static class CliRunner
             PrintHelp();
             return args.Length == 0 ? 2 : 0;
         }
-        if (args.Contains("-v") || args.Contains("--version"))
+        // 0.2.0: -v moved to --verbose (common CLI convention); version is -V/--version.
+        if (args.Contains("-V") || args.Contains("--version"))
         {
             Console.WriteLine($"vornisk {Version}");
             return 0;
         }
 
         CopyOptions opt;
-        bool quiet, json;
+        CliFlags flags;
         try
         {
-            opt = ParseArgs(args, out quiet, out json);
+            (opt, flags) = ParseArgs(args);
         }
         catch (ArgumentException ex)
         {
@@ -37,24 +45,31 @@ internal static class CliRunner
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
         var engine = new CopyEngine();
-        IProgress<CopyProgress>? progress = quiet || json ? null : new Progress<CopyProgress>(RenderProgress);
+        IProgress<CopyProgress>? progress =
+            flags.JsonProgress ? new Progress<CopyProgress>(RenderJsonProgress)
+            : flags.Bars       ? new Progress<CopyProgress>(RenderProgress)
+            : null;
+
+        bool endBarLine = flags.Bars && !_ansi; // plain single-line mode needs its \r line terminated
 
         try
         {
             var result = await engine.RunAsync(opt, progress, cts.Token);
-            // Plain mode: terminate the single \r line. Two-bar mode already left the cursor on a
-            // fresh line below the bars, so no extra newline is needed there.
-            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
+            if (endBarLine) Console.Error.WriteLine();
 
-            if (json) PrintJson(result);
-            else if (!quiet) PrintSummary(result);
+            if (result.DryRun)
+            {
+                if (flags.Json || flags.JsonProgress) PrintJson(result);
+                else if (!flags.Quiet) PrintDryRunSummary(result);
+            }
+            else if (flags.Json || flags.JsonProgress) PrintJson(result);
+            else if (!flags.Quiet) PrintSummary(result);
 
             return result.Success ? 0 : 1;
         }
         catch (OperationCanceledException)
         {
-            // Plain mode: end the \r line. Two-bar mode already sits on a fresh line below the bars.
-            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
+            if (endBarLine) Console.Error.WriteLine();
             Console.Error.WriteLine("vornisk: cancelled.");
             return 130;
         }
@@ -62,7 +77,7 @@ internal static class CliRunner
         {
             // Backstop: anything that escapes the engine (bad/blocked destination, enumeration I/O error
             // on a flaky mount, path too long, …) becomes a clean message + exit 1 — never a crash dump.
-            if (!quiet && !json && !_ansi) Console.Error.WriteLine();
+            if (endBarLine) Console.Error.WriteLine();
             Console.Error.WriteLine($"vornisk: {ex.Message}");
             return 1;
         }
@@ -70,7 +85,7 @@ internal static class CliRunner
 
     // ── argument parsing ────────────────────────────────────────────────────────────
 
-    private static CopyOptions ParseArgs(string[] args, out bool quiet, out bool json)
+    private static (CopyOptions opt, CliFlags flags) ParseArgs(string[] args)
     {
         var op       = CopyOperation.Copy;
         bool verify  = true;
@@ -79,7 +94,9 @@ internal static class CliRunner
         var conflict = ConflictMode.Skip;
         int buffer   = 1024 * 1024;
         bool preserve = true;
-        quiet = false; json = false;
+        bool dryRun  = false;
+        var excludes = new List<string>();
+        var flags    = new CliFlags();
         var positionals = new List<string>();
 
         for (int i = 0; i < args.Length; i++)
@@ -91,8 +108,12 @@ internal static class CliRunner
                 case "--no-verify":              verify = false; break;
                 case "--overwrite":              conflict = ConflictMode.Overwrite; break;
                 case "--no-preserve":            preserve = false; break;
-                case "-q": case "--quiet":       quiet = true; break;
-                case "--json":                   json = true; break;
+                case "-q": case "--quiet":       flags.Quiet = true; break;
+                case "--json":                   flags.Json = true; break;
+                case "--json-progress":          flags.JsonProgress = true; break;
+                case "-v": case "--verbose":     flags.Verbose = true; break;
+                case "-n": case "--dry-run":     dryRun = true; break;
+                case "-x": case "--exclude":     excludes.Add(NextValue(args, ref i, a)); break;
                 case "-j": case "--threads":     threads = ParseInt(NextValue(args, ref i, a), a); break;
                 case "-l": case "--limit":       limit = ParseSize(NextValue(args, ref i, a)); break;
                 case "--buffer":                 buffer = (int)Math.Min(ParseSize(NextValue(args, ref i, a)), int.MaxValue); break;
@@ -113,7 +134,7 @@ internal static class CliRunner
         var dest    = positionals[^1];
         var sources = positionals.GetRange(0, positionals.Count - 1);
 
-        return new CopyOptions
+        var opt = new CopyOptions
         {
             Sources = sources,
             Destination = dest,
@@ -125,7 +146,25 @@ internal static class CliRunner
             BufferSize = buffer,
             PreserveTimestamps = preserve,
             PreservePermissions = preserve,
+            DryRun = dryRun,
+            Excludes = excludes,
+            // -v: one line per file on stderr (dry-run: the planned transfer). Bars are off in
+            // verbose mode, so the lines never fight the ANSI cursor moves.
+            OnItemCompleted = flags.Verbose ? PrintItemLine : null,
         };
+        return (opt, flags);
+    }
+
+    private static void PrintItemLine(FileItem item)
+    {
+        var line = item.Status switch
+        {
+            ItemStatus.Failed  => $"  FAIL  {item.SourcePath}: {item.Error}",
+            ItemStatus.Skipped => $"  skip  {item.SourcePath}",
+            ItemStatus.Pending => $"  plan  {item.SourcePath} -> {item.DestPath} ({Human(item.SizeBytes)})",
+            _                  => $"  ok    {item.SourcePath} -> {item.DestPath} ({Human(item.SizeBytes)})",
+        };
+        Console.Error.WriteLine(line);
     }
 
     private static string NextValue(string[] args, ref int i, string opt)
@@ -185,7 +224,7 @@ internal static class CliRunner
                     $"{Human(p.CurrentFileBytes)}/{Human(p.CurrentFileTotal)}  {name}";
         string l2 = $"  total  {Bar(p.Fraction, barW)} {p.Fraction * 100,5:0.0}%  " +
                     $"{Human(p.BytesDone)}/{Human(p.TotalBytes)}  {Human((long)p.BytesPerSec)}/s  " +
-                    $"files {p.FilesDone}/{p.TotalFiles}" +
+                    $"ETA {FmtEta(p.EtaSeconds)}  files {p.FilesDone}/{p.TotalFiles}" +
                     (p.FilesFailed > 0 ? $"  failed {p.FilesFailed}" : "") +
                     (p.FilesSkipped > 0 ? $"  skipped {p.FilesSkipped}" : "");
 
@@ -200,11 +239,32 @@ internal static class CliRunner
     private static void RenderProgressPlain(CopyProgress p)
     {
         var line = $"\r{p.Fraction * 100,5:0.0}%  {Human(p.BytesDone)}/{Human(p.TotalBytes)}  " +
-                   $"{Human((long)p.BytesPerSec)}/s  files {p.FilesDone}/{p.TotalFiles}" +
+                   $"{Human((long)p.BytesPerSec)}/s  ETA {FmtEta(p.EtaSeconds)}  files {p.FilesDone}/{p.TotalFiles}" +
                    (p.FilesFailed > 0 ? $"  failed {p.FilesFailed}" : "") +
                    (p.FilesSkipped > 0 ? $"  skipped {p.FilesSkipped}" : "");
         if (line.Length < 79) line += new string(' ', 79 - line.Length); // clear leftovers
         Console.Error.Write(line);
+    }
+
+    private static string FmtEta(double? seconds)
+    {
+        if (seconds is not { } s || s < 0 || s > 30 * 24 * 3600) return "--:--";
+        var t = TimeSpan.FromSeconds(s);
+        return t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes}:{t.Seconds:00}";
+    }
+
+    // ── --json-progress: one NDJSON event per tick on stdout (final summary object follows) ──
+    private static readonly object _jsonLock = new(); // Progress<T> posts to the pool — keep lines whole
+
+    private static void RenderJsonProgress(CopyProgress p)
+    {
+        var eta = p.EtaSeconds is { } e ? e.ToString("0.0", CultureInfo.InvariantCulture) : "null";
+        var line =
+            $"{{\"type\":\"progress\",\"bytesDone\":{p.BytesDone},\"totalBytes\":{p.TotalBytes}," +
+            $"\"filesDone\":{p.FilesDone},\"totalFiles\":{p.TotalFiles},\"failed\":{p.FilesFailed}," +
+            $"\"skipped\":{p.FilesSkipped},\"bytesPerSec\":{(long)p.BytesPerSec},\"etaSeconds\":{eta}," +
+            $"\"currentFile\":{Quote(p.CurrentFile ?? "")}}}";
+        lock (_jsonLock) Console.WriteLine(line);
     }
 
     private static string Bar(double frac, int width)
@@ -227,11 +287,24 @@ internal static class CliRunner
         catch { return 80; }
     }
 
+    private static void PrintDryRunSummary(CopyResult r)
+    {
+        Console.WriteLine($"DRY RUN — nothing copied. Plan: {r.TotalFiles} file(s), {Human(r.PlannedBytes)}." +
+            (r.Conflicts > 0 ? $"  {r.Conflicts} destination conflict(s)." : "") +
+            (r.FilesExcluded > 0 ? $"  {r.FilesExcluded} excluded." : "") +
+            (r.SymlinksSkipped > 0 ? $"  {r.SymlinksSkipped} symlink(s) skipped (not followed)." : ""));
+    }
+
     private static void PrintSummary(CopyResult r)
     {
         Console.WriteLine($"Copied {r.FilesCopied}/{r.TotalFiles} files ({Human(r.BytesCopied)}) in {r.Elapsed.TotalSeconds:0.0}s" +
             (r.Elapsed.TotalSeconds > 0 ? $" @ {Human((long)(r.BytesCopied / r.Elapsed.TotalSeconds))}/s" : ""));
         if (r.FilesSkipped > 0) Console.WriteLine($"Skipped: {r.FilesSkipped}");
+        if (r.FilesExcluded > 0) Console.WriteLine($"Excluded: {r.FilesExcluded}");
+        if (r.SymlinksSkipped > 0) Console.WriteLine($"Symlinks: {r.SymlinksSkipped} skipped (never followed — copy them explicitly if intended)");
+        if (r.SourceDirsRemoved > 0 || r.SourceDirsKept > 0)
+            Console.WriteLine($"Source dirs: {r.SourceDirsRemoved} removed" +
+                (r.SourceDirsKept > 0 ? $", {r.SourceDirsKept} kept (not empty)" : ""));
         if (r.FilesFailed > 0)
         {
             Console.WriteLine($"Failed:  {r.FilesFailed}");
@@ -255,10 +328,14 @@ internal static class CliRunner
     {
         var errs = string.Join(",", r.Errors.Select(e =>
             $"{{\"path\":{Quote(e.Path)},\"error\":{Quote(e.Error)}}}"));
-        Console.WriteLine(
-            $"{{\"totalFiles\":{r.TotalFiles},\"copied\":{r.FilesCopied},\"skipped\":{r.FilesSkipped}," +
-            $"\"failed\":{r.FilesFailed},\"bytes\":{r.BytesCopied},\"seconds\":{r.Elapsed.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture)}," +
-            $"\"success\":{(r.Success ? "true" : "false")},\"errors\":[{errs}]}}");
+        var line =
+            $"{{\"type\":\"summary\",\"totalFiles\":{r.TotalFiles},\"copied\":{r.FilesCopied},\"skipped\":{r.FilesSkipped}," +
+            $"\"failed\":{r.FilesFailed},\"excluded\":{r.FilesExcluded},\"symlinksSkipped\":{r.SymlinksSkipped}," +
+            $"\"sourceDirsRemoved\":{r.SourceDirsRemoved},\"sourceDirsKept\":{r.SourceDirsKept}," +
+            $"\"dryRun\":{(r.DryRun ? "true" : "false")},\"plannedBytes\":{r.PlannedBytes},\"conflicts\":{r.Conflicts}," +
+            $"\"bytes\":{r.BytesCopied},\"seconds\":{r.Elapsed.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture)}," +
+            $"\"success\":{(r.Success ? "true" : "false")},\"errors\":[{errs}]}}";
+        lock (_jsonLock) Console.WriteLine(line);
     }
 
     private static string Quote(string s)
@@ -317,25 +394,35 @@ ARGS:
     DESTINATION     target file (single source) or directory (multiple / dir sources)
 
 OPTIONS:
-    -m, --move              move instead of copy (delete source after verified write)
+    -m, --move              move instead of copy (delete source after verified write;
+                            emptied source dirs are removed, non-empty ones kept)
         --no-verify         skip the xxHash3 verify pass (faster, less safe)
+    -n, --dry-run           plan only: show/count what WOULD transfer, touch nothing
+    -x, --exclude GLOB      exclude entries (repeatable); '*'/'?' globs match the entry
+                            name, or the source-relative path if the pattern has a '/'
     -j, --threads N         concurrent file workers (default: min(4, CPUs))
     -l, --limit RATE        throttle, e.g. 200M, 1G, 512K (base-1024 bytes/sec; default: unlimited)
         --on-conflict MODE  skip | overwrite | rename   (default: skip)
         --overwrite         shorthand for --on-conflict overwrite
         --buffer SIZE       I/O buffer size (default: 1M)
         --no-preserve       do not preserve timestamps / Unix permissions
+    -v, --verbose           one line per file on stderr (disables the progress bars)
     -q, --quiet             no progress, no summary
         --json              machine-readable summary on stdout
+        --json-progress     NDJSON progress events on stdout (one per tick), summary last
     -h, --help              show this help
-    -v, --version           show version
+    -V, --version           show version
+
+    Pause/resume: Ctrl-Z suspends, `fg` resumes (standard job control).
+    Symlinks found while walking a tree are never followed; the summary counts them.
 
 EXIT CODES:
     0 success   1 one or more files failed   2 usage error   130 cancelled
 
 EXAMPLES:
     vornisk /data/file.iso /backup/
-    vornisk -m --on-conflict rename /src/* /dst
+    vornisk -m --on-conflict rename /src/a /src/b /dst
+    vornisk -n -x '*.tmp' -x node_modules /repo /backup     # rehearse first
     sudo vornisk -j 8 -l 300M /mnt/array /mnt/nas/backup");
     }
 }

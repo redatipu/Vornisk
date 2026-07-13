@@ -1,0 +1,21 @@
+#compdef vornisk
+# zsh completion for vornisk — drop in a $fpath dir (e.g. /usr/local/share/zsh/site-functions/)
+
+_arguments -s \
+  '(-m --move)'{-m,--move}'[move instead of copy (delete source after verified write)]' \
+  '--no-verify[skip the xxHash3 verify pass]' \
+  '(-n --dry-run)'{-n,--dry-run}'[plan only, touch nothing]' \
+  '*'{-x,--exclude}'[exclude glob (repeatable)]:pattern:' \
+  '(-j --threads)'{-j,--threads}'[concurrent file workers]:count:' \
+  '(-l --limit)'{-l,--limit}'[throttle, e.g. 200M, 1G]:rate:' \
+  '--on-conflict[conflict mode]:mode:(skip overwrite rename)' \
+  '--overwrite[shorthand for --on-conflict overwrite]' \
+  '--buffer[I/O buffer size]:size:' \
+  '--no-preserve[do not preserve timestamps/permissions]' \
+  '(-v --verbose)'{-v,--verbose}'[one line per file on stderr]' \
+  '(-q --quiet)'{-q,--quiet}'[no progress, no summary]' \
+  '--json[machine-readable summary on stdout]' \
+  '--json-progress[NDJSON progress events on stdout]' \
+  '(-h --help)'{-h,--help}'[show help]' \
+  '(-V --version)'{-V,--version}'[show version]' \
+  '*:file or directory:_files'

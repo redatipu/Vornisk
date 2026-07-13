@@ -10,7 +10,7 @@
 
   <!-- Whole UI scrolls if the window is shrunk below content size → nothing ever clips. -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" MinWidth="408">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" MinWidth="408">
 
       <!-- Header -->
       <StackPanel Grid.Row="0" Margin="0,0,0,12" Spacing="2">
@@ -60,14 +60,34 @@
         </WrapPanel>
       </Border>
 
-      <!-- Actions -->
+      <!-- Actions: Start queues while running; Pause/Resume toggles; Clear drops pending jobs -->
       <WrapPanel Grid.Row="4" Margin="0,0,0,10">
-        <Button Content="Start" Classes="accent" MinWidth="96" Margin="0,0,8,0" Command="{Binding StartCommand}" />
-        <Button Content="Cancel" MinWidth="96" Command="{Binding CancelCommand}" />
+        <Button Content="{Binding StartButtonText}" Classes="accent" MinWidth="96" Margin="0,0,8,0" Command="{Binding StartCommand}" />
+        <Button Content="{Binding PauseButtonText}" MinWidth="96" Margin="0,0,8,0" Command="{Binding PauseResumeCommand}" />
+        <Button Content="Cancel" MinWidth="96" Margin="0,0,8,0" Command="{Binding CancelCommand}" />
+        <Button Content="Clear queue" MinWidth="96" Margin="0,0,8,0" Command="{Binding ClearQueueCommand}" />
+        <Button Content="Open destination" MinWidth="120" Command="{Binding OpenDestCommand}" />
       </WrapPanel>
 
+      <!-- Queue (visible once jobs exist) -->
+      <Border Grid.Row="5" CornerRadius="6" Background="#1E293B" Padding="8" Margin="0,0,0,8"
+              IsVisible="{Binding HasJobs}">
+        <ItemsControl ItemsSource="{Binding Jobs}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="11" Foreground="#94A3B8"
+                           MinWidth="76" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="11" Foreground="#CBD5E1"
+                           TextWrapping="Wrap" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
       <!-- Progress — dual bars, TeraCopy-style: current file on top, whole job below -->
-      <StackPanel Grid.Row="5" Margin="0,0,0,8" Spacing="4">
+      <StackPanel Grid.Row="6" Margin="0,0,0,8" Spacing="4">
         <TextBlock Text="{Binding CurrentFile}" FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
         <ProgressBar Height="10" Minimum="0" Maximum="100" Value="{Binding FileProgressValue}" />
         <TextBlock Text="{Binding FileProgressText}" FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" />
@@ -76,7 +96,7 @@
       </StackPanel>
 
       <!-- Log (fills remaining height; scrolls) -->
-      <Border Grid.Row="6" CornerRadius="6" Background="#0B1220" BorderBrush="#334155" BorderThickness="1" MinHeight="120">
+      <Border Grid.Row="7" CornerRadius="6" Background="#0B1220" BorderBrush="#334155" BorderThickness="1" MinHeight="120">
         <TextBox Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                  Background="Transparent" BorderThickness="0" FontFamily="monospace" FontSize="12"
                  Foreground="#CBD5E1" VerticalContentAlignment="Top"
@@ -85,7 +105,7 @@
       </Border>
 
       <!-- Status -->
-      <TextBlock Grid.Row="7" Margin="0,10,0,0" Text="{Binding StatusText}"
+      <TextBlock Grid.Row="8" Margin="0,10,0,0" Text="{Binding StatusText}"
                  FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" />
     </Grid>
   </ScrollViewer>

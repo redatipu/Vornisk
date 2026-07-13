@@ -1,0 +1,27 @@
+# bash completion for vornisk — source this file or drop it in /etc/bash_completion.d/
+_vornisk()
+{
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="-m --move --no-verify -n --dry-run -x --exclude -j --threads -l --limit
+          --on-conflict --overwrite --buffer --no-preserve -v --verbose -q --quiet
+          --json --json-progress -h --help -V --version"
+
+    case "${prev}" in
+        --on-conflict)
+            COMPREPLY=( $(compgen -W "skip overwrite rename" -- "${cur}") )
+            return 0 ;;
+        -j|--threads|-l|--limit|--buffer|-x|--exclude)
+            return 0 ;;  # free-form values
+    esac
+
+    if [[ ${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+    fi
+    # default: paths
+    COMPREPLY=( $(compgen -f -- "${cur}") )
+}
+complete -o filenames -F _vornisk vornisk

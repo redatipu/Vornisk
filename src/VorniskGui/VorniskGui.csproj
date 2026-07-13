@@ -3,6 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
+    <Version>0.2.0</Version>
     <RootNamespace>VorniskGui</RootNamespace>
     <AssemblyName>vornisk-gui</AssemblyName>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>

@@ -1,0 +1,116 @@
+.TH VORNISK 1 "July 2026" "vornisk 0.2.0" "User Commands"
+.SH NAME
+vornisk \- fast, verified file copy and move
+.SH SYNOPSIS
+.B vornisk
+[\fIOPTIONS\fR] \fISOURCE\fR... \fIDESTINATION\fR
+.SH DESCRIPTION
+.B vornisk
+copies or moves files and directory trees with per-file integrity verification
+(xxHash3), an honest bandwidth throttle, dual progress bars, and atomic writes.
+Every file is written to a sibling \fI*.part\fR temporary and renamed into place,
+so a crash never leaves a half-written file at the final path. On a move, the
+source is deleted only after the destination is written \fBand\fR verified, and
+the emptied source directory tree is removed (directories still holding entries
+are kept).
+.PP
+Symbolic links encountered while walking a tree are never followed; the summary
+reports how many were skipped. Naming a symlink directly as a SOURCE argument
+follows it deliberately.
+.SH OPTIONS
+.TP
+.BR \-m ", " \-\-move
+Move instead of copy. Source files are deleted only after the verified write;
+emptied source directories are then removed bottom-up.
+.TP
+.B \-\-no\-verify
+Skip the verify pass (faster, less safe). Same-filesystem moves become an
+instant rename.
+.TP
+.BR \-n ", " \-\-dry\-run
+Plan only: enumerate, count files/bytes, and detect destination conflicts
+without touching anything. Combine with \fB\-v\fR to list every planned transfer.
+.TP
+.BR \-x ", " \-\-exclude " " \fIGLOB\fR
+Exclude entries (repeatable). Patterns with \fB*\fR and \fB?\fR match the entry
+name; a pattern containing a path separator matches the source-relative path.
+Matching directories are pruned without walking their contents. Case-insensitive.
+.TP
+.BR \-j ", " \-\-threads " " \fIN\fR
+Concurrent file workers (default: min(4, CPU count)).
+.TP
+.BR \-l ", " \-\-limit " " \fIRATE\fR
+Throttle, e.g. \fB512K\fR, \fB200M\fR, \fB1G\fR (base-1024 bytes/second).
+Default: unlimited.
+.TP
+.B \-\-on\-conflict \fIMODE\fR
+What to do when the destination file exists: \fBskip\fR (default),
+\fBoverwrite\fR, or \fBrename\fR (numbered sibling).
+.TP
+.B \-\-overwrite
+Shorthand for \fB\-\-on\-conflict overwrite\fR.
+.TP
+.B \-\-buffer \fISIZE\fR
+I/O buffer size (default: 1M).
+.TP
+.B \-\-no\-preserve
+Do not preserve timestamps and Unix permission bits.
+.TP
+.BR \-v ", " \-\-verbose
+One line per file on stderr (ok/skip/FAIL, or the planned transfer under
+\fB\-\-dry\-run\fR). Disables the progress bars.
+.TP
+.BR \-q ", " \-\-quiet
+No progress, no summary.
+.TP
+.B \-\-json
+Machine-readable summary object on stdout.
+.TP
+.B \-\-json\-progress
+NDJSON progress events on stdout (one per ~200 ms tick), followed by the
+summary object as the final line.
+.TP
+.BR \-h ", " \-\-help
+Show help (with the banner).
+.TP
+.BR \-V ", " \-\-version
+Show version.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+At least one file failed.
+.TP
+.B 2
+Usage error.
+.TP
+.B 130
+Cancelled (Ctrl-C).
+.SH PAUSE AND RESUME
+Standard job control works: \fBCtrl-Z\fR suspends the process,
+.BR fg (1)
+resumes it.
+.SH EXAMPLES
+Verified copy of a file into a directory:
+.PP
+.nf
+    vornisk /data/backup.tar.zst /mnt/nas/backups/
+.fi
+.PP
+Rehearse a large move first, excluding scratch data:
+.PP
+.nf
+    vornisk -n -v -x '*.tmp' -x node_modules -m /srv/project /archive/
+.fi
+.PP
+Throttled parallel copy to a NAS, scriptable result:
+.PP
+.nf
+    vornisk -j 8 -l 300M --json --quiet /mnt/array /mnt/nas/backup | jq .success
+.fi
+.SH SEE ALSO
+.BR cp (1),
+.BR mv (1),
+.BR rsync (1)
